@@ -6,7 +6,8 @@
 - Fetching User information
 - Fetching multiple users
 - No Login required
-- Export data in json and csv format
+- Pretty formatting
+- Export data in multiple formats
 
 # Installation
 - Pypi: `pip install Vinted_OSINT`
@@ -15,18 +16,19 @@
 
 # Usage
 Fetch a single user: `$ vinted -u <username> `
-Fetch multiple users: `$ vinted --user-list <user_file>`
+Fetch multiple users: `$ vinted --user_list <user_file>`
 
 > [!NOTE]
 > The usernames in the file should be separated with new lines.
 
+`-u` and `--user_list` can't be used together (obviously)
 ### Other arguments
 
 - `--extension` -> Specify a custom extension, e.g, `.fr` or `.de`
 - `--license` -> Displays license information
 - `--fetch_all` -> Fetches also the payment information
-- `--no-export` -> Data won't be exported
-- `--export_format` -> Specify export format [json, csv]
+- `--no_export` -> Data won't be exported
+- `--export_format` -> Specify export format [json,csv,html,latex,txt]
 
 # Credits / Acknowledgements
 
@@ -41,6 +43,10 @@ Libraries used:
 - [fake_useragent](https://github.com/fake-useragent/fake-useragent)
 - [prettytable](https://github.com/jazzband/prettytable)
 
+
+# Contributions
+Any contribution is appreciated. If you have feedback, issues or want to help,
+don't hesitate to do so.
 
 # License
 Vinted Osint is licensed under [GPLv3](https://www.gnu.org/licenses/gpl-3.0.en.html)

@@ -18,8 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import json
 import argparse
 import os.path
-import time
-
 import requests
 
 from fake_useragent import UserAgent
@@ -86,19 +84,11 @@ class OSINT:
     def __init__(self, username, username_list):
         self.session = requests.Session()
         self.VINTED_AUTH_URL = f"https://www.vinted{extension}/auth/token_refresh"
-        self.dicts = {}
-
-        self.payment_table = PrettyTable()
-
-        self.main_table = PrettyTable()
-        self.main_table.field_names = ["Category", "Variable", "Value"]
-
-        self.photo_table = PrettyTable()
-        self.photo_table.field_names = ["Category", "Variable", "Value"]
-
-        self.discount_table = PrettyTable()
-        self.discount_table.field_names = ["Category", "Variable", "Value"]
-
+        self.dicts = None
+        self.payment_table = None
+        self.main_table = None
+        self.discount_table = None
+        self.photo_table = None
 
         if not username is None:
             self.usernames = [username]
@@ -123,11 +113,35 @@ class OSINT:
 
     def start(self):
         for username_ in self.usernames:
+            self.setup_tables()
             self.dictionary = self.get_information(username_)
             self.create_tables()
             self.print_everything()
-            self.dictionary.clear()
+            self.clear_tables()
 
+
+    def clear_tables(self):
+        self.photo_table.clear()
+        self.main_table.clear()
+        self.discount_table.clear()
+        self.payment_table.clear()
+        self.dictionary.clear()
+        self.dicts.clear()
+
+
+    def setup_tables(self):
+        self.dicts = {}
+
+        self.payment_table = PrettyTable()
+
+        self.main_table = PrettyTable()
+        self.main_table.field_names = ["Category", "Variable", "Value"]
+
+        self.photo_table = PrettyTable()
+        self.photo_table.field_names = ["Category", "Variable", "Value"]
+
+        self.discount_table = PrettyTable()
+        self.discount_table.field_names = ["Category", "Variable", "Value"]
 
 
     def get_information(self, username):
@@ -257,11 +271,10 @@ class OSINT:
         self.discount_table.sortby = "Category"
         self.photo_table.sortby = "Category"
 
-
-        print(self.main_table)
-        print(self.photo_table)
-        print(self.discount_table)
-        print(self.payment_table)
+        print(self.main_table) if not len(self.main_table.rows) < 2 else None
+        print(self.photo_table) if not len(self.photo_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No photo data has been found.")
+        print(self.discount_table) if not len(self.discount_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No discount data has been found.")
+        print(self.payment_table) if not len(self.payment_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No payment data has been found.")
 
         mapping_main = {
             "json": self.main_table.get_json_string(),
@@ -317,16 +330,12 @@ class OSINT:
                 elif idx == 3:
                     filename = f"data_payment_{username}.{export_format}"
 
-
-                with open(filename, "w") as file:
-                    file.write(data_)
-
             print(f"{Fore.LIGHTMAGENTA_EX}Data was exported in: .{export_format}")
 
             if not os.path.exists(username):
                 os.mkdir(username)
 
-            with open(f"{username}{os.sep}data.{export_format}", "w") as file:
+            with open(f"{username}{os.sep}{filename}", "w") as file:
                 file.write(str(data))
 
 
