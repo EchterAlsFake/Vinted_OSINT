@@ -33,8 +33,8 @@ parser = argparse.ArgumentParser(
 
 # Mutually exclusive group for username or user list
 group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("-u", "--username", help="Username")
-group.add_argument("-ul", "--user_list", help="List of user names, separated by new line")
+group.add_argument("-u", "--user_id", help="User ID")
+group.add_argument("-ul", "--user_list", help="List of user IDs, separated by new line")
 
 # Additional arguments
 parser.add_argument("-e", "--extension", help="The website extension e.g. .fr .com .de", default=".com")
@@ -67,7 +67,7 @@ Thanks to: https://github.com/herissondev/vinted-api-wrapper for the idea how to
 # Set default values based on arguments
 export = not args.no_export  # Export is enabled unless --no_export is set
 extension = args.extension
-username = args.username
+username = args.user_id
 username_list = args.user_list
 fetch_all = args.fetch_all
 

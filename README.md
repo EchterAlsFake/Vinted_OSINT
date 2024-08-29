@@ -15,11 +15,18 @@
 - From source: `git clone https://github.com/EchterAlsFake/Vinted_OSINT && cd Vinted_OSINT && pip install -r requirements.txt`
 
 # Usage
-Fetch a single user: `$ vinted -u <username> `
+
+> [!IMPORTANT]
+> You need to give a User ID, not a name!
+> The User ID is inside the URL for example: `vinted.com/member/146483126-bonnjeff1`
+> <br>
+> The User ID is: `146483126`
+
+Fetch a single user: `$ vinted -u <user id> `
 Fetch multiple users: `$ vinted --user_list <user_file>`
 
 > [!NOTE]
-> The usernames in the file should be separated with new lines.
+> The user IDs in the file should be separated with new lines.
 
 `-u` and `--user_list` can't be used together (obviously)
 ### Other arguments
