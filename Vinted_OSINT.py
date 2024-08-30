@@ -26,58 +26,64 @@ from prettytable import PrettyTable
 
 init(autoreset=True)
 
-parser = argparse.ArgumentParser(
-    prog="Vinted OSINT",
-    description="An Open-Source intelligent Tool to get information about User/s on Vinted"
-)
+def main():
+    global export, extension, username, username_list, fetch_all, export_format
 
-# Mutually exclusive group for username or user list
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument("-u", "--user_id", help="User ID")
-group.add_argument("-ul", "--user_list", help="List of user IDs, separated by new line")
+    parser = argparse.ArgumentParser(
+        prog="Vinted OSINT",
+        description="An Open-Source intelligent Tool to get information about User/s on Vinted"
+    )
 
-# Additional arguments
-parser.add_argument("-e", "--extension", help="The website extension e.g. .fr .com .de", default=".com")
-parser.add_argument("-c", "--license", help="Licensing and copyright information", action="store_true")
-parser.add_argument("-a", "--fetch_all", help="Fetches literally ALL information", action="store_true")
-parser.add_argument("--no_export", help="If enabled, won't export any data", action="store_true")
-parser.add_argument("-f", "--export_format", help="Defines the export format [json, csv, html, latex, txt]",
-                    choices=["json", "csv", "html", "latex", "txt"])
+    # Mutually exclusive group for username or user list
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-u", "--user_id", help="User ID")
+    group.add_argument("-ul", "--user_list", help="List of user IDs, separated by new line")
 
-# Parse arguments
-args = parser.parse_args()
+    # Additional arguments
+    parser.add_argument("-e", "--extension", help="The website extension e.g. .fr .com .de", default=".com")
+    parser.add_argument("-c", "--license", help="Licensing and copyright information", action="store_true")
+    parser.add_argument("-a", "--fetch_all", help="Fetches literally ALL information", action="store_true")
+    parser.add_argument("--no_export", help="If enabled, won't export any data", action="store_true")
+    parser.add_argument("-f", "--export_format", help="Defines the export format [json, csv, html, latex, txt]",
+                        choices=["json", "csv", "html", "latex", "txt"])
 
-# Display license information
-if args.license:
-    print("""
-Vinted Osint - 2024
-Developed by Johannes Habel | EchterAlsFake
-Licensed under GPLv3
+    # Parse arguments
+    args = parser.parse_args()
 
-Used projects:
-- requests
-- colorama
-- prettytable
-- fake_useragent 
+    # Display license information
+    if args.license:
+        print("""
+    Vinted Osint - 2024
+    Developed by Johannes Habel | EchterAlsFake
+    Licensed under GPLv3
 
-Thanks to: https://github.com/herissondev/vinted-api-wrapper for the idea how to do the authentication stuff
-    """)
-    exit(0)
+    Used projects:
+    - requests
+    - colorama
+    - prettytable
+    - fake_useragent 
 
-# Set default values based on arguments
-export = not args.no_export  # Export is enabled unless --no_export is set
-extension = args.extension
-username = args.user_id
-username_list = args.user_list
-fetch_all = args.fetch_all
+    Thanks to: https://github.com/herissondev/vinted-api-wrapper for the idea how to do the authentication stuff
+        """)
+        exit(0)
 
-# Determine export format and handle warnings if necessary
-export_format = args.export_format if args.export_format else "json"
+    # Set default values based on arguments
+    export = not args.no_export  # Export is enabled unless --no_export is set
+    extension = args.extension
+    username = args.user_id
+    username_list = args.user_list
+    fetch_all = args.fetch_all
 
-if export and not args.export_format:
-    export = False  # Disable export if no format is provided
-    print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTYELLOW_EX}Warning: {Fore.LIGHTWHITE_EX}You did not set an export format, "
-          f"no data will be saved to a file.")
+    # Determine export format and handle warnings if necessary
+    export_format = args.export_format if args.export_format else "json"
+
+    if export and not args.export_format:
+        export = False  # Disable export if no format is provided
+        print(
+            f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTYELLOW_EX}Warning: {Fore.LIGHTWHITE_EX}You did not set an export format, "
+            f"no data will be saved to a file.")
+
+    OSINT(username=username, username_list=username_list)
 
 
 class OSINT:
@@ -349,4 +355,6 @@ class OSINT:
         except Exception as e:
             print(e)
 
-OSINT(username=username, username_list=username_list)
+
+if __name__ == "__main__":
+    main()

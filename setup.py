@@ -1,14 +1,14 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name="Vinted_OSINT",
     version="1.0",
-    packages=find_packages(),
     install_requires=[
         "requests", "colorama", "fake_useragent", "prettytable"
     ],
+    py_modules=["Vinted_OSINT"],
     entry_points={
-        'console_scripts': ['Vinted_OSINT=main:main'
+        'console_scripts': ['Vinted_OSINT=Vinted_OSINT:main'
             # If you want to create any executable scripts
         ],
     },
