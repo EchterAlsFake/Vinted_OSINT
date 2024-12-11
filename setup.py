@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="Vinted_OSINT",
-    version="1.0",
+    version="1.1",
     install_requires=[
         "requests", "colorama", "fake_useragent", "prettytable"
     ],

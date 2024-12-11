@@ -89,7 +89,7 @@ def main():
 class OSINT:
     def __init__(self, username, username_list):
         self.session = requests.Session()
-        self.VINTED_AUTH_URL = f"https://www.vinted{extension}/auth/token_refresh"
+        self.VINTED_AUTH_URL = f"https://www.vinted{extension}"
         self.dicts = None
         self.payment_table = None
         self.main_table = None
@@ -155,6 +155,7 @@ class OSINT:
 
         retries = 5
         for i in range(retries):
+            print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Requesting: https://www.vinted{extension}/api/v2/users/{username} [{i}/{retries}]")
             data = self.session.get(url=f"https://www.vinted{extension}/api/v2/users/{username}")
             if data.status_code == 401:
                 self.authentication_flow()
