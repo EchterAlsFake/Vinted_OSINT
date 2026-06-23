@@ -1,5 +1,5 @@
 """
-Copyright (C) 2024  Johannes Habel
+Copyright (C) 2024-2026  Johannes Habel
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -14,24 +14,32 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import asyncio
 import json
 import argparse
 import os.path
-import requests
 
-from fake_useragent import UserAgent
+from base_api import BaseCore
 from colorama import Fore, init
 from prettytable import PrettyTable
+from rich.console import Console
+from rich.table import Table as RichTable
+from rich.panel import Panel
+from rich import box
+from rich.text import Text
+from rich_argparse import RichHelpFormatter
+
+console = Console()
 
 init(autoreset=True)
 
-def main():
+async def run_main():
     global export, extension, username, username_list, fetch_all, export_format
 
     parser = argparse.ArgumentParser(
         prog="Vinted OSINT",
-        description="An Open-Source intelligent Tool to get information about User/s on Vinted"
+        description="An Open-Source intelligent Tool to get information about User/s on Vinted",
+        formatter_class=RichHelpFormatter
     )
 
     # Mutually exclusive group for username or user list
@@ -83,12 +91,12 @@ def main():
             f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTYELLOW_EX}Warning: {Fore.LIGHTWHITE_EX}You did not set an export format, "
             f"no data will be saved to a file.")
 
-    OSINT(username=username, username_list=username_list)
+    await OSINT(username=username, username_list=username_list).start()
 
 
 class OSINT:
     def __init__(self, username, username_list):
-        self.session = requests.Session()
+        self.core = BaseCore()
         self.VINTED_AUTH_URL = f"https://www.vinted{extension}"
         self.dicts = None
         self.payment_table = None
@@ -103,9 +111,8 @@ class OSINT:
             with open(username_list, "r") as users:
                 self.usernames = users.read().splitlines()
 
-        ua = UserAgent()
         HEADERS = {
-            'User-Agent': ua.firefox,
+            'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" ,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en',
             'DNT': '1',
@@ -113,14 +120,14 @@ class OSINT:
             'TE': 'Trailers'
         }
 
-        self.session.headers.update(HEADERS)
+        self.core.initialize_session()
+        self.core.session.headers.update(HEADERS)
         self.dictionary = None
-        self.start()
 
-    def start(self):
+    async def start(self):
         for username_ in self.usernames:
             self.setup_tables()
-            self.dictionary = self.get_information(username_)
+            self.dictionary = await self.get_information(username_)
             self.create_tables()
             self.print_everything()
             self.clear_tables()
@@ -150,15 +157,16 @@ class OSINT:
         self.discount_table.field_names = ["Category", "Variable", "Value"]
 
 
-    def get_information(self, username):
+    async def get_information(self, username):
         print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTCYAN_EX}Fetching information for: {username}")
 
         retries = 5
         for i in range(retries):
             print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Requesting: https://www.vinted{extension}/api/v2/users/{username} [{i}/{retries}]")
-            data = self.session.get(url=f"https://www.vinted{extension}/api/v2/users/{username}")
+            data = await self.core.fetch(url=f"https://www.vinted{extension}/api/v2/users/{username}", get_response=True)
+
             if data.status_code == 401:
-                self.authentication_flow()
+                await self.authentication_flow()
 
             else:
                 return json.loads(data.content.decode("utf-8"))["user"]
@@ -167,17 +175,18 @@ class OSINT:
 
         categories = {
             "User Info": [
-                "id", "anon_id", "login", "real_name", "email", "birthday", "city", "country_title",
-                "country_title_local", "profile_url", "share_profile_url", "is_online", "last_loged_on"
+                "id", "anon_id", "login", "real_name", "email", "birthday", "city", "city_id",
+                "country_title", "country_title_local", "country_id", "country_code", "country_iso_code",
+                "profile_url", "share_profile_url", "is_online", "last_loged_on", "last_loged_on_ts"
             ],
             "Account Status": [
-                "account_status", "is_account_ban_permanent", "account_ban_date", "moderator",
+                "account_status", "is_account_banned", "account_ban_date", "action_restriction", "moderator",
                 "is_catalog_moderator", "is_catalog_role_marketing_photos", "is_hated", "hates_you",
                 "can_view_profile", "is_favourite"
             ],
             "Preferences": [
                 "is_publish_photos_agreed", "expose_location", "third_party_tracking",
-                "allow_direct_messaging", "localization", "locale"
+                "allow_direct_messaging", "localization", "locale", "iso_locale_code", "hide_feedback"
             ],
             "Statistics": [
                 "item_count", "given_item_count", "taken_item_count", "followers_count", "following_count",
@@ -185,19 +194,18 @@ class OSINT:
                 "negative_feedback_count", "meeting_transaction_count", "feedback_reputation",
                 "feedback_count", "total_items_count"
             ],
-            "Verification": [
-                "email_verification", "facebook_verification", "google_verification"
-            ],
             "Other": [
-                "path", "contacts_permission", "contacts", "photo", "bundle_discount", "fundraiser",
+                "path", "contacts_permission", "contacts", "photo", "bundle_discount", "can_bundle", "fundraiser",
                 "business_account_id", "has_ship_fast_badge", "about", "avg_response_time",
                 "carrier_ids", "carriers_without_custom_ids", "updated_on", "msg_template_count",
-                "business_account", "business", "default_address", "code"
+                "business_account", "business", "default_address", "code", "currency", "facebook_user_id",
+                "is_bpf_price_prominence_applied"
             ]
-        }  # Categories for the main table
+        }
 
         for category, variables in categories.items():
             self.add_rows(self.main_table, category, variables, self.dictionary)
+
 
         photo_data = self.dictionary.get("photo", None)
         if not photo_data is None:
@@ -237,11 +245,76 @@ class OSINT:
                 self.discount_table.add_row(["Discounts", f"Minimal Item Count ({discount.get('minimal_item_count', 'N/A')})",
                                discount.get("fraction", "N/A")])
 
+        # Extract verification data safely
+        verification_data = self.dictionary.get("verification", {})
+        if verification_data:
+            for method, details in verification_data.items():
+                if isinstance(details, dict):
+                    is_valid = details.get("valid", "N/A")
+                    verified_at = details.get("verified_at", "N/A")
+                    self.main_table.add_row(["Verification", f"{method.capitalize()} Valid", str(is_valid)])
+                    if verified_at and verified_at != "N/A":
+                        self.main_table.add_row(
+                            ["Verification", f"{method.capitalize()} Verified At", str(verified_at)])
+
+
         payment_methods = self.dictionary.get("accepted_pay_in_methods", None)
         if payment_methods is not None:
             self.create_payment_table(payment_methods)
 
+    def evaluate_seller_risk(self, data):
+        if not data:
+            return "Unknown", 0
 
+        score = 100
+        flags = []
+        # 1. Critical Hard Checks
+        if data.get("is_account_banned") or data.get("action_restriction"):
+            return "SCAMMER / BANNED", 0
+
+        if data.get("photo"):
+            if data.get("photo", {}).get("is_suspicious"):
+                score -= 40
+                flags.append("Suspicious profile photo flag")
+
+        # 2. Feedback Analysis
+        feedback_count = data.get("feedback_count", 0)
+        reputation = data.get("feedback_reputation", 0.0)
+        negatives = data.get("negative_feedback_count", 0)
+
+        if feedback_count == 0:
+            score -= 25
+            flags.append("Zero feedback history")
+        elif reputation < 0.90:
+            score -= 20
+            flags.append(f"Low reputation rating ({reputation * 100}%)")
+        if negatives > 3:
+            score -= 15
+            flags.append(f"Multiple negative feedbacks ({negatives})")
+
+        # 3. Verification Check
+        verifications = data.get("verification", {})
+        verified_methods = sum(
+            1 for method in verifications.values() if isinstance(method, dict) and method.get("valid")
+        )
+        if verified_methods < 2:
+            score -= 15
+            flags.append("Weak account verification (less than 2 methods)")
+
+        # 4. Activity Check
+        if data.get("given_item_count", 0) == 0 and data.get("item_count", 0) > 10:
+            score -= 10
+            flags.append("High item listing volume but 0 successful sales")
+
+        # Determine Tier
+        if score >= 80:
+            status = "Good Seller (Safe)"
+        elif score >= 50:
+            status = "Caution (Potential Risk)"
+        else:
+            status = "High Risk / Likely Scammer"
+
+        return status, max(0, score), flags
 
     def add_rows(self, table, category, variables, dictionary):
         for var in variables:
@@ -272,16 +345,46 @@ class OSINT:
         else:
             return str(value)
 
+    def _print_rich_table(self, pt, title):
+        if not pt.rows:
+            return False
+        rich_table = RichTable(title=title, box=box.ROUNDED, header_style="bold magenta", border_style="cyan", title_style="bold yellow")
+        for field in pt.field_names:
+            rich_table.add_column(field, style="bright_white")
+        for row in pt.rows:
+            rich_table.add_row(*[str(item) for item in row])
+        console.print(rich_table)
+        console.print()
+        return True
+
     # Main method to print everything
     def print_everything(self):
         self.main_table.sortby = "Category"
         self.discount_table.sortby = "Category"
         self.photo_table.sortby = "Category"
 
-        print(self.main_table) if not len(self.main_table.rows) < 2 else None
-        print(self.photo_table) if not len(self.photo_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No photo data has been found.")
-        print(self.discount_table) if not len(self.discount_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No discount data has been found.")
-        print(self.payment_table) if not len(self.payment_table.rows) < 2 else print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No payment data has been found.")
+        self._print_rich_table(self.main_table, "Main Information")
+        if not self._print_rich_table(self.photo_table, "Photo Information"):
+            print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No photo data has been found.")
+        if not self._print_rich_table(self.discount_table, "Discount Information"):
+            print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No discount data has been found.")
+        if not self._print_rich_table(self.payment_table, "Payment Information"):
+            print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No payment data has been found.")
+
+
+        status, score, flags = self.evaluate_seller_risk(data=self.dictionary)
+        risk_color = "red" if score < 50 else "yellow" if score < 80 else "green"
+
+        risk_text = Text()
+        risk_text.append("Based on the Provided API data a risk of the seller has been calculated.\nThis is only an estimate and does not guarantee or prove anything.\n\n", style="bold")
+        risk_text.append(f"Risk Score: {score} - {status}\n", style=f"bold {risk_color}")
+        if flags:
+            risk_text.append("\nFlags:\n", style="bold red")
+            for flag in flags:
+                risk_text.append(f" - {flag}\n", style="yellow")
+
+        console.print(Panel(risk_text, title="Seller Risk Evaluation", border_style="cyan"))
+
 
         mapping_main = {
             "json": self.main_table.get_json_string(),
@@ -346,16 +449,19 @@ class OSINT:
                 file.write(str(data))
 
 
-    def authentication_flow(self):
-        self.session.cookies.clear_session_cookies()
+    async def authentication_flow(self):
+        self.core.session.cookies.clear()
 
         try:
-            self.session.post(self.VINTED_AUTH_URL)
+            await self.core.fetch(method="POST", url=self.VINTED_AUTH_URL)
             print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Authentication Success!")
 
         except Exception as e:
             print(e)
 
 
+def main():
+    asyncio.run(run_main())
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_main())

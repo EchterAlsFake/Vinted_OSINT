@@ -1,68 +1,30 @@
-import importlib.util
-from pathlib import Path
+import sys
 import json
+import asyncio
+from pathlib import Path
+
 import pytest
+
+# Add src to Python path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+import Vinted_OSINT
 
 USER_ID_TO_TEST = "238146303"
 USER_IDS_TO_TEST = ["49346009", "40333919"]
 
 
-def _load_target_module():
-    """
-    Tries to find and import the python file that contains your OSINT class,
-    without hard-coding the module name (main.py, vinted_osint.py, etc.).
-    """
-    repo_root = Path(__file__).resolve().parents[1]
-
-    candidates = []
-    for py in repo_root.rglob("*.py"):
-        if "tests" in py.parts:
-            continue
-        try:
-            txt = py.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-
-        # Strong-ish fingerprints for your file:
-        if 'prog="Vinted OSINT"' in txt and "class OSINT" in txt and "/api/v2/users/" in txt:
-            candidates.append(py)
-
-    if not candidates:
-        pytest.fail(
-            "Could not find the module containing class OSINT. "
-            "Make sure your main script is in the repo and contains 'class OSINT' "
-            "and 'prog=\"Vinted OSINT\"'."
-        )
-
-    target = candidates[0]
-    spec = importlib.util.spec_from_file_location("vinted_osint_target", target)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def _wrap_with_timeout(fn, timeout_seconds=20):
-    def inner(*args, **kwargs):
-        kwargs.setdefault("timeout", timeout_seconds)
-        return fn(*args, **kwargs)
-
-    return inner
-
-
 @pytest.fixture(scope="session")
 def osint_mod():
-    mod = _load_target_module()
-
     # Globals your OSINT class expects (normally set by main()).
-    mod.extension = ".com"
-    mod.export = False
-    mod.fetch_all = False
-    mod.export_format = "json"
-    mod.username = USER_ID_TO_TEST
-    mod.username_list = None
+    Vinted_OSINT.extension = ".com"
+    Vinted_OSINT.export = False
+    Vinted_OSINT.fetch_all = False
+    Vinted_OSINT.export_format = "json"
+    Vinted_OSINT.username = USER_ID_TO_TEST
+    Vinted_OSINT.username_list = None
 
-    return mod
+    return Vinted_OSINT
 
 
 def _make_osint_instance(mod, monkeypatch, username, username_list=None):
@@ -70,18 +32,13 @@ def _make_osint_instance(mod, monkeypatch, username, username_list=None):
     monkeypatch.setattr(mod.OSINT, "start", lambda self: None)
 
     o = mod.OSINT(username=username, username_list=username_list)
-
-    # Keep real network requests, but avoid hanging forever on a server.
-    o.session.get = _wrap_with_timeout(o.session.get, 20)
-    o.session.post = _wrap_with_timeout(o.session.post, 20)
-
     return o
 
 
 def test_live_single_user_returns_user_dict(osint_mod, monkeypatch):
     o = _make_osint_instance(osint_mod, monkeypatch, username=USER_ID_TO_TEST)
 
-    user = o.get_information(USER_ID_TO_TEST)
+    user = asyncio.run(o.get_information(USER_ID_TO_TEST))
 
     assert isinstance(user, dict), "Expected a dict from get_information()."
     assert user, "Expected non-empty user data."
@@ -100,7 +57,7 @@ def test_live_tables_can_be_built_and_export_strings_are_valid(osint_mod, monkey
     o = _make_osint_instance(osint_mod, monkeypatch, username=USER_ID_TO_TEST)
 
     o.setup_tables()
-    o.dictionary = o.get_information(USER_ID_TO_TEST)
+    o.dictionary = asyncio.run(o.get_information(USER_ID_TO_TEST))
     o.create_tables()
 
     assert len(o.main_table.rows) > 0, "Expected main_table to have rows."
@@ -122,7 +79,7 @@ def test_live_tables_can_be_built_and_export_strings_are_valid(osint_mod, monkey
 def test_live_multiple_users_return_data(osint_mod, monkeypatch, uid):
     o = _make_osint_instance(osint_mod, monkeypatch, username=uid)
 
-    user = o.get_information(uid)
+    user = asyncio.run(o.get_information(uid))
     assert isinstance(user, dict) and user, f"Expected non-empty user data for {uid}."
     assert "id" in user and user["id"] is not None, f"Expected an 'id' in user data for {uid}."
 

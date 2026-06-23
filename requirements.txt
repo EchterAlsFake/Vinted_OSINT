@@ -1,0 +1,4 @@
+eaf_base_api
+colorama
+prettytable
+rich

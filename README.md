@@ -3,6 +3,7 @@
 
 
 # Features:
+- Seller risk evaluation
 - Fetching User information
 - Fetching multiple users
 - No Login required
@@ -45,7 +46,7 @@ Fetch multiple users: `$ vinted --user_list <user_file>`
 
 Libraries used:
 
-- [requests](https://github.com/psf/requests)
+- [eaf_base_api](https://github.com/echteralsfake/eaf_base_api)
 - [colorama](https://github.com/tartley/colorama)
 - [fake_useragent](https://github.com/fake-useragent/fake-useragent)
 - [prettytable](https://github.com/jazzband/prettytable)
@@ -57,6 +58,6 @@ don't hesitate to do so.
 
 # License
 Vinted Osint is licensed under [GPLv3](https://www.gnu.org/licenses/gpl-3.0.en.html)
-<br>Copyright 2024 Johannes Habel
+<br>Copyright 2024-2026 Johannes Habel
 
 
