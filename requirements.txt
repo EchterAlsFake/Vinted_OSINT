@@ -1,4 +1,5 @@
-eaf_base_api
+eaf_base_api>=4.2.0,<5
 colorama
 prettytable
-rich
+rich>=15.0.0
+rich-argparse>=1.8.0

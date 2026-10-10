@@ -17,9 +17,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import json
 import argparse
-import os.path
+import re
+from pathlib import Path
+from dataclasses import dataclass, field
 
 from base_api import BaseCore
+from base_api.modules.errors import AccessDeniedError
 from colorama import Fore, init
 from prettytable import PrettyTable
 from rich.console import Console
@@ -33,143 +36,126 @@ console = Console()
 
 init(autoreset=True)
 
-async def run_main():
-    global export, extension, username, username_list, fetch_all, export_format
+@dataclass
+class BatchResult:
+    users: dict[str, dict] = field(default_factory=dict)
+    failures: dict[str, str] = field(default_factory=dict)
 
+
+async def run_main(argv=None):
     parser = argparse.ArgumentParser(
-        prog="Vinted OSINT",
-        description="An Open-Source intelligent Tool to get information about User/s on Vinted",
-        formatter_class=RichHelpFormatter
+        prog="Vinted OSINT", description="Retrieve public Vinted user information",
+        formatter_class=RichHelpFormatter,
     )
-
-    # Mutually exclusive group for username or user list
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument("-u", "--user_id", help="User ID")
-    group.add_argument("-ul", "--user_list", help="List of user IDs, separated by new line")
-
-    # Additional arguments
-    parser.add_argument("-e", "--extension", help="The website extension e.g. .fr .com .de", default=".com")
-    parser.add_argument("-c", "--license", help="Licensing and copyright information", action="store_true")
-    parser.add_argument("-a", "--fetch_all", help="Fetches literally ALL information", action="store_true")
-    parser.add_argument("--no_export", help="If enabled, won't export any data", action="store_true")
-    parser.add_argument("-f", "--export_format", help="Defines the export format [json, csv, html, latex, txt]",
-                        choices=["json", "csv", "html", "latex", "txt"])
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Display license information
+    group.add_argument("-ul", "--user_list", help="File containing one user ID per line")
+    parser.add_argument("-e", "--extension", default=".com", help="Regional extension, e.g. .fr or .de")
+    parser.add_argument("-c", "--license", action="store_true", help="Licensing and acknowledgements")
+    parser.add_argument("-a", "--fetch_all", action="store_true", help="Include all API fields in the report")
+    parser.add_argument("--no_export", action="store_true", help="Disable exports")
+    parser.add_argument("-f", "--export_format", choices=["json", "csv", "html", "latex", "txt"])
+    parser.add_argument("--output-dir", type=Path, default=Path('.'), help="Export directory")
+    args = parser.parse_args(argv)
     if args.license:
-        print("""
-    Vinted Osint - 2024
-    Developed by Johannes Habel | EchterAlsFake
-    Licensed under GPLv3
-
-    Used projects:
-    - requests
-    - colorama
-    - prettytable
-    - fake_useragent 
-
-    Thanks to: https://github.com/herissondev/vinted-api-wrapper for the idea how to do the authentication stuff
-        """)
-        exit(0)
-
-    # Set default values based on arguments
-    export = not args.no_export  # Export is enabled unless --no_export is set
-    extension = args.extension
-    username = args.user_id
-    username_list = args.user_list
-    fetch_all = args.fetch_all
-
-    # Determine export format and handle warnings if necessary
-    export_format = args.export_format if args.export_format else "json"
-
-    if export and not args.export_format:
-        export = False  # Disable export if no format is provided
-        print(
-            f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTYELLOW_EX}Warning: {Fore.LIGHTWHITE_EX}You did not set an export format, "
-            f"no data will be saved to a file.")
-
-    await OSINT(username=username, username_list=username_list).start()
+        console.print("Vinted OSINT — GPL-3.0-or-later\nDeveloped by Johannes Habel / EchterAlsFake\n"
+                      "Libraries: eaf_base_api, colorama, prettytable, rich, rich-argparse\n"
+                      "Authentication inspiration: https://github.com/herissondev/vinted-api-wrapper")
+        return 0
+    if not (args.user_id or args.user_list):
+        parser.error("provide --user_id or --user_list")
+    try:
+        client = OSINT(args.user_id, args.user_list, extension=args.extension,
+                       export_format=None if args.no_export else args.export_format,
+                       fetch_all=args.fetch_all, output_dir=args.output_dir)
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
+    result = await client.start()
+    return 1 if result.failures else 0
 
 
 class OSINT:
-    def __init__(self, username, username_list):
-        self.core = BaseCore()
+    """Fetch users and coordinate independent reports; options are instance-local."""
+
+    def __init__(self, username=None, username_list=None, *, extension=".com",
+                 export_format=None, fetch_all=False, output_dir=Path('.'), core=None):
+        if (username is None) == (username_list is None):
+            raise ValueError("provide exactly one user ID or user-list file")
+        if not re.fullmatch(r"\.[a-z]{2,}", extension):
+            raise ValueError("extension must be a regional suffix such as .com or .fr")
+        if export_format not in (None, "json", "csv", "html", "latex", "txt"):
+            raise ValueError("unsupported export format")
+        ids = [str(username)] if username is not None else Path(username_list).read_text(encoding="utf-8").splitlines()
+        self.usernames = list(dict.fromkeys(uid.strip() for uid in ids if uid.strip()))
+        if not self.usernames or any(not re.fullmatch(r"[0-9]+", uid) for uid in self.usernames):
+            raise ValueError("user IDs must contain digits only; user lists must not be empty")
+        self.extension = extension
         self.VINTED_AUTH_URL = f"https://www.vinted{extension}"
-        self.dicts = None
-        self.payment_table = None
-        self.main_table = None
-        self.discount_table = None
-        self.photo_table = None
-
-        if not username is None:
-            self.usernames = [username]
-
-        elif not username_list is None:
-            with open(username_list, "r") as users:
-                self.usernames = users.read().splitlines()
-
-        HEADERS = {
-            'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" ,
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'TE': 'Trailers'
-        }
-
-        self.core.initialize_session()
-        self.core.session.headers.update(HEADERS)
-        self.dictionary = None
+        self.export_format = export_format
+        self.fetch_all = fetch_all
+        self.output_dir = Path(output_dir)
+        self.core = core if core is not None else BaseCore()
+        self.core.default_headers.update({'Accept': 'application/json, text/plain, */*', 'Accept-Language': 'en'})
 
     async def start(self):
-        for username_ in self.usernames:
-            self.setup_tables()
-            self.dictionary = await self.get_information(username_)
-            self.create_tables()
-            self.print_everything()
-            self.clear_tables()
-
-
-    def clear_tables(self):
-        self.photo_table.clear()
-        self.main_table.clear()
-        self.discount_table.clear()
-        self.payment_table.clear()
-        self.dictionary.clear()
-        self.dicts.clear()
-
-
-    def setup_tables(self):
-        self.dicts = {}
-
-        self.payment_table = PrettyTable()
-
-        self.main_table = PrettyTable()
-        self.main_table.field_names = ["Category", "Variable", "Value"]
-
-        self.photo_table = PrettyTable()
-        self.photo_table.field_names = ["Category", "Variable", "Value"]
-
-        self.discount_table = PrettyTable()
-        self.discount_table.field_names = ["Category", "Variable", "Value"]
-
+        result = BatchResult()
+        try:
+            for user_id in self.usernames:
+                try:
+                    user = await self.get_information(user_id)
+                    report = UserReport(user, fetch_all=self.fetch_all)
+                    report.print_everything()
+                    if self.export_format:
+                        report.export(user_id, self.export_format, self.output_dir)
+                    result.users[user_id] = user
+                except Exception as error:
+                    result.failures[user_id] = f"{type(error).__name__}: {error}"
+                    console.print(f"Failed user {user_id}: {error}", style="red", markup=False)
+        finally:
+            await self.core.close()
+        console.print(f"Completed: {len(result.users)} succeeded, {len(result.failures)} failed.")
+        return result
 
     async def get_information(self, username):
         print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTCYAN_EX}Fetching information for: {username}")
 
         retries = 5
         for i in range(retries):
-            print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Requesting: https://www.vinted{extension}/api/v2/users/{username} [{i}/{retries}]")
-            data = await self.core.fetch(url=f"https://www.vinted{extension}/api/v2/users/{username}", get_response=True)
-
-            if data.status_code == 401:
+            print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Requesting: {self.VINTED_AUTH_URL}/api/v2/users/{username} [{i}/{retries}]")
+            try:
+                data = await self.core.request(url=f"{self.VINTED_AUTH_URL}/api/v2/users/{username}")
+            except AccessDeniedError:
+                if i == retries - 1:
+                    raise
                 await self.authentication_flow()
-
             else:
-                return json.loads(data.content.decode("utf-8"))["user"]
+                payload = data.json()
+                if not isinstance(payload, dict) or not isinstance(payload.get("user"), dict) or not payload["user"]:
+                    raise ValueError("API response must contain a non-empty user object")
+                user = payload["user"]
+                if str(user.get("id")) != str(username):
+                    raise ValueError("API response user ID does not match the requested ID")
+                return user
+
+    async def authentication_flow(self):
+        self.core.initialize_session()
+        self.core.session.cookies.clear()
+        await self.core.request(method="POST", url=self.VINTED_AUTH_URL)
+        print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Authentication Success!")
+
+
+class UserReport:
+    """Format and export a fetched user without changing the source data."""
+
+    def __init__(self, user, *, fetch_all=False):
+        self.dictionary = user
+        self.fetch_all = fetch_all
+        self.main_table = PrettyTable(["Category", "Variable", "Value"])
+        self.photo_table = PrettyTable(["Category", "Variable", "Value"])
+        self.discount_table = PrettyTable(["Category", "Variable", "Value"])
+        self.payment_table = PrettyTable(["ID", "Code", "Requires Credit Card", "Event Tracking Code", "Icon",
+                                          "Enabled", "Translated Name", "Note", "Method Change Possible"])
+        self.create_tables()
 
     def create_tables(self):
 
@@ -206,6 +192,11 @@ class OSINT:
         for category, variables in categories.items():
             self.add_rows(self.main_table, category, variables, self.dictionary)
 
+
+        if self.fetch_all:
+            known = {name for names in categories.values() for name in names}
+            self.add_rows(self.main_table, "Additional API Fields",
+                          sorted(set(self.dictionary) - known), self.dictionary)
 
         photo_data = self.dictionary.get("photo", None)
         if not photo_data is None:
@@ -262,59 +253,38 @@ class OSINT:
         if payment_methods is not None:
             self.create_payment_table(payment_methods)
 
-    def evaluate_seller_risk(self, data):
-        if not data:
-            return "Unknown", 0
-
-        score = 100
-        flags = []
-        # 1. Critical Hard Checks
-        if data.get("is_account_banned") or data.get("action_restriction"):
-            return "SCAMMER / BANNED", 0
-
-        if data.get("photo"):
-            if data.get("photo", {}).get("is_suspicious"):
-                score -= 40
-                flags.append("Suspicious profile photo flag")
-
-        # 2. Feedback Analysis
-        feedback_count = data.get("feedback_count", 0)
-        reputation = data.get("feedback_reputation", 0.0)
-        negatives = data.get("negative_feedback_count", 0)
-
-        if feedback_count == 0:
-            score -= 25
-            flags.append("Zero feedback history")
-        elif reputation < 0.90:
-            score -= 20
-            flags.append(f"Low reputation rating ({reputation * 100}%)")
-        if negatives > 3:
-            score -= 15
-            flags.append(f"Multiple negative feedbacks ({negatives})")
-
-        # 3. Verification Check
-        verifications = data.get("verification", {})
-        verified_methods = sum(
-            1 for method in verifications.values() if isinstance(method, dict) and method.get("valid")
-        )
-        if verified_methods < 2:
-            score -= 15
-            flags.append("Weak account verification (less than 2 methods)")
-
-        # 4. Activity Check
-        if data.get("given_item_count", 0) == 0 and data.get("item_count", 0) > 10:
-            score -= 10
-            flags.append("High item listing volume but 0 successful sales")
-
-        # Determine Tier
-        if score >= 80:
-            status = "Good Seller (Safe)"
-        elif score >= 50:
-            status = "Caution (Potential Risk)"
+    @staticmethod
+    def evaluate_seller_risk(data):
+        """Return reported observations and missing evidence, without a safety score."""
+        observations, missing = [], []
+        for key, label in (("is_account_banned", "Account ban reported"),
+                           ("action_restriction", "Account restriction reported")):
+            if key not in data or data[key] is None:
+                missing.append(key)
+            elif data[key]:
+                observations.append(label)
+        for key in ("feedback_count", "negative_feedback_count", "feedback_reputation"):
+            value = data.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                observations.append(f"{key.replace('_', ' ').capitalize()}: {value}")
+            else:
+                missing.append(key)
+        photo = data.get("photo")
+        if isinstance(photo, dict) and isinstance(photo.get("is_suspicious"), bool):
+            if photo["is_suspicious"]:
+                observations.append("API marks the profile photo as suspicious")
         else:
-            status = "High Risk / Likely Scammer"
-
-        return status, max(0, score), flags
+            missing.append("photo.is_suspicious")
+        verification = data.get("verification")
+        if isinstance(verification, dict) and verification:
+            for name, details in verification.items():
+                if isinstance(details, dict) and isinstance(details.get("valid"), bool):
+                    observations.append(f"{name} verification: {'reported valid' if details['valid'] else 'reported invalid'}")
+                else:
+                    missing.append(f"verification.{name}")
+        else:
+            missing.append("verification")
+        return observations, missing
 
     def add_rows(self, table, category, variables, dictionary):
         for var in variables:
@@ -323,7 +293,6 @@ class OSINT:
             table.add_row([category, var, formatted_value])
 
 
-    # Function to create and display the payment table if fetch_all is True
     def create_payment_table(self, payment_methods):
         self.payment_table.field_names = ["ID", "Code", "Requires Credit Card", "Event Tracking Code", "Icon",
                                      "Enabled", "Translated Name", "Note", "Method Change Possible"]
@@ -339,11 +308,9 @@ class OSINT:
         """Format the value to handle None and nested data."""
         if value is None:
             return "N/A"
-        if isinstance(value, dict):
-            self.dicts.update({variable: value})
-
-        else:
-            return str(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
 
     def _print_rich_table(self, pt, title):
         if not pt.rows:
@@ -372,96 +339,35 @@ class OSINT:
             print(f"{Fore.LIGHTRED_EX}[!]{Fore.LIGHTWHITE_EX}No payment data has been found.")
 
 
-        status, score, flags = self.evaluate_seller_risk(data=self.dictionary)
-        risk_color = "red" if score < 50 else "yellow" if score < 80 else "green"
+        observations, missing = self.evaluate_seller_risk(self.dictionary)
+        text = Text("Public profile observations do not establish seller reliability or fraud.\n\n")
+        for observation in observations:
+            text.append(f"• {observation}\n")
+        if missing:
+            text.append("\nUnavailable or unrecognized data: " + ", ".join(missing))
+        console.print(Panel(text, title="Seller profile observations", border_style="cyan"))
 
-        risk_text = Text()
-        risk_text.append("Based on the Provided API data a risk of the seller has been calculated.\nThis is only an estimate and does not guarantee or prove anything.\n\n", style="bold")
-        risk_text.append(f"Risk Score: {score} - {status}\n", style=f"bold {risk_color}")
-        if flags:
-            risk_text.append("\nFlags:\n", style="bold red")
-            for flag in flags:
-                risk_text.append(f" - {flag}\n", style="yellow")
-
-        console.print(Panel(risk_text, title="Seller Risk Evaluation", border_style="cyan"))
-
-
-        mapping_main = {
-            "json": self.main_table.get_json_string(),
-            "html": self.main_table.get_html_string(),
-            "csv": self.main_table.get_csv_string(),
-            "latex": self.main_table.get_latex_string(),
-            "txt": self.main_table.get_string()
-        }
-
-        mapping_photo = {
-            "json": self.photo_table.get_json_string(),
-            "html": self.photo_table.get_html_string(),
-            "csv": self.photo_table.get_csv_string(),
-            "latex": self.photo_table.get_latex_string(),
-            "txt": self.photo_table.get_string()
-        }
-
-        mapping_discount = {
-            "json": self.discount_table.get_json_string(),
-            "csv": self.discount_table.get_csv_string(),
-            "latex": self.discount_table.get_latex_string(),
-            "txt": self.discount_table.get_string(),
-            "html": self.discount_table.get_html_string()
-        }
-
-        mapping_payment = {
-            "json": self.payment_table.get_json_string(),
-            "csv": self.payment_table.get_csv_string(),
-            "latex": self.payment_table.get_latex_string(),
-            "txt": self.payment_table.get_string(),
-            "html": self.payment_table.get_html_string()
-        }
-
-
-        if export:
-            data = [
-                mapping_main.get(export_format),
-                mapping_photo.get(export_format),
-                mapping_discount.get(export_format),
-                mapping_payment.get(export_format),
-            ]
-
-            for idx, data_ in enumerate(data):
-                if idx == 0:
-                    filename = f"data_main_{username}.{export_format}"
-
-                elif idx == 1:
-                    filename = f"data_photo_{username}.{export_format}"
-
-                elif idx == 2:
-                    filename = f"data_discount_{username}.{export_format}"
-
-                elif idx == 3:
-                    filename = f"data_payment_{username}.{export_format}"
-
-            print(f"{Fore.LIGHTMAGENTA_EX}Data was exported in: .{export_format}")
-
-            if not os.path.exists(username):
-                os.mkdir(username)
-
-            with open(f"{username}{os.sep}{filename}", "w") as file:
-                file.write(str(data))
-
-
-    async def authentication_flow(self):
-        self.core.session.cookies.clear()
-
-        try:
-            await self.core.fetch(method="POST", url=self.VINTED_AUTH_URL)
-            print(f"{Fore.LIGHTGREEN_EX}[+]{Fore.LIGHTYELLOW_EX}Authentication Success!")
-
-        except Exception as e:
-            print(e)
+    def export(self, user_id, export_format, output_dir=Path('.')):
+        if not re.fullmatch(r"[0-9]+", str(user_id)):
+            raise ValueError("user IDs must contain digits only")
+        serializers = {"json": "get_json_string", "csv": "get_csv_string", "html": "get_html_string",
+                       "latex": "get_latex_string", "txt": "get_string"}
+        if export_format not in serializers:
+            raise ValueError("unsupported export format")
+        directory = Path(output_dir) / str(user_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for name in ("main", "photo", "discount", "payment"):
+            table = getattr(self, f"{name}_table")
+            path = directory / f"data_{name}_{user_id}.{export_format}"
+            path.write_text(getattr(table, serializers[export_format])(), encoding="utf-8")
+            paths.append(path)
+        console.print(f"Exported {len(paths)} files to {directory}", markup=False)
+        return paths
 
 
 def main():
-    asyncio.run(run_main())
+    raise SystemExit(asyncio.run(run_main()))
 
 if __name__ == "__main__":
-    asyncio.run(run_main())
+    raise SystemExit(asyncio.run(run_main()))

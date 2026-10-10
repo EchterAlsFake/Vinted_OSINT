@@ -1,6 +1,15 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
+
+[[package]]
+name = "cachetools"
+version = "7.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/44/71476a5812da1ddf2c9a3efd31ae76d01480a1cf03ed13ac28aa8f2402e4/cachetools-7.2.1.tar.gz", hash = "sha256:b1a7537025c06abf96fcc1443e496af9a3fb95e774e70e1f0af226f73f7f2dcc", size = 41357, upload-time = "2026-10-05T18:40:06.361Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f0/c9/2a61d784caf0d869a3326728c57c7203f50cc53f3cca2ee76bf924769eb4/cachetools-7.2.1-py3-none-any.whl", hash = "sha256:63aa53dfe7473c10cccdd5a01dedf76ef2c4b73a58840d9396e7d0752cbdac3b", size = 17006, upload-time = "2026-10-05T18:40:04.827Z" },
+]
 
 [[package]]
 name = "certifi"
@@ -112,15 +121,16 @@ wheels = [
 
 [[package]]
 name = "eaf-base-api"
-version = "3.3.2"
+version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "cachetools" },
     { name = "curl-cffi" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/7a/1bfa4b6904ed2dd2a8d60a7a2c3469d696e4312c754d924b075952e15b6d/eaf_base_api-3.3.2.tar.gz", hash = "sha256:241003c3795f24d4800c4019fbc53e7cb1afebfc9f03bfcedf65a452acb55b80", size = 37763, upload-time = "2026-06-22T09:36:27.082Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/c0/13ebf9afc9e693e175992a67cbc9baa5906e1b15948165a1b24d56ffff03/eaf_base_api-4.2.0.tar.gz", hash = "sha256:2a1690a5f5e3feb81df73b64fca3925d3bb59a1f1601ec47ed58f1f211a54da3", size = 71840, upload-time = "2026-09-15T13:34:37.301Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/de/be75e76677b26bfde4fa515a37fecb738f64a129561a0762652c7df51035/eaf_base_api-3.3.2-py3-none-any.whl", hash = "sha256:bc60f5f948cc2a535a845e0c9b31f4d3dcebbad53c2f576f4d1396007973898c", size = 40805, upload-time = "2026-06-22T09:36:25.705Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/86/3afa844af8bef9da0513a3ee282c2d0740fd83e813e993bf66a0c85cc094/eaf_base_api-4.2.0-py3-none-any.whl", hash = "sha256:09a9bfe0b5e9c87821c1f0a5e674da82fcf65d99e84327462fe81b0c8f341397", size = 72749, upload-time = "2026-09-15T13:34:36.037Z" },
 ]
 
 [[package]]
@@ -210,7 +220,7 @@ wheels = [
 
 [[package]]
 name = "vinted-osint"
-version = "1.2"
+version = "1.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorama" },
@@ -223,7 +233,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "colorama" },
-    { name = "eaf-base-api", specifier = "==3.3.2" },
+    { name = "eaf-base-api", specifier = ">=4.2.0,<5" },
     { name = "prettytable" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "rich-argparse", specifier = ">=1.8.0" },

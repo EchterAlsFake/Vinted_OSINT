@@ -16,14 +16,6 @@ USER_IDS_TO_TEST = ["49346009", "40333919"]
 
 @pytest.fixture(scope="session")
 def osint_mod():
-    # Globals your OSINT class expects (normally set by main()).
-    Vinted_OSINT.extension = ".com"
-    Vinted_OSINT.export = False
-    Vinted_OSINT.fetch_all = False
-    Vinted_OSINT.export_format = "json"
-    Vinted_OSINT.username = USER_ID_TO_TEST
-    Vinted_OSINT.username_list = None
-
     return Vinted_OSINT
 
 
@@ -35,10 +27,20 @@ def _make_osint_instance(mod, monkeypatch, username, username_list=None):
     return o
 
 
+def _get_information(o, user_id):
+    async def fetch_and_close():
+        try:
+            return await o.get_information(user_id)
+        finally:
+            await o.core.close()
+    return asyncio.run(fetch_and_close())
+
+
+@pytest.mark.live
 def test_live_single_user_returns_user_dict(osint_mod, monkeypatch):
     o = _make_osint_instance(osint_mod, monkeypatch, username=USER_ID_TO_TEST)
 
-    user = asyncio.run(o.get_information(USER_ID_TO_TEST))
+    user = _get_information(o, USER_ID_TO_TEST)
 
     assert isinstance(user, dict), "Expected a dict from get_information()."
     assert user, "Expected non-empty user data."
@@ -53,12 +55,11 @@ def test_live_single_user_returns_user_dict(osint_mod, monkeypatch):
     ), "Expected a Vinted profile URL."
 
 
+@pytest.mark.live
 def test_live_tables_can_be_built_and_export_strings_are_valid(osint_mod, monkeypatch):
     o = _make_osint_instance(osint_mod, monkeypatch, username=USER_ID_TO_TEST)
 
-    o.setup_tables()
-    o.dictionary = asyncio.run(o.get_information(USER_ID_TO_TEST))
-    o.create_tables()
+    o = Vinted_OSINT.UserReport(_get_information(o, USER_ID_TO_TEST))
 
     assert len(o.main_table.rows) > 0, "Expected main_table to have rows."
 
@@ -76,10 +77,11 @@ def test_live_tables_can_be_built_and_export_strings_are_valid(osint_mod, monkey
 
 
 @pytest.mark.parametrize("uid", USER_IDS_TO_TEST)
+@pytest.mark.live
 def test_live_multiple_users_return_data(osint_mod, monkeypatch, uid):
     o = _make_osint_instance(osint_mod, monkeypatch, username=uid)
 
-    user = asyncio.run(o.get_information(uid))
+    user = _get_information(o, uid)
     assert isinstance(user, dict) and user, f"Expected non-empty user data for {uid}."
     assert "id" in user and user["id"] is not None, f"Expected an 'id' in user data for {uid}."
 
@@ -89,4 +91,7 @@ def test_user_list_file_is_read_correctly(osint_mod, monkeypatch, tmp_path):
     user_list_path.write_text("\n".join(USER_IDS_TO_TEST), encoding="utf-8")
 
     o = _make_osint_instance(osint_mod, monkeypatch, username=None, username_list=str(user_list_path))
-    assert o.usernames == USER_IDS_TO_TEST
+    try:
+        assert o.usernames == USER_IDS_TO_TEST
+    finally:
+        asyncio.run(o.core.close())
